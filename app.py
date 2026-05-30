@@ -1,112 +1,124 @@
 import streamlit as st
-import requests
-from bs4 import BeautifulSoup
+import yfinance as yf
+import pandas as pd
 import datetime
+import requests
 
 # Page Config
 st.set_page_config(page_title="HeyFund Research Report", layout="wide")
 
+# Custom CSS for Branding
 st.markdown("""
     <style>
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
-    .report-card { border: 3px solid #b8922e; padding: 20px; background: white; max-width: 800px; margin: auto; font-family: sans-serif; }
+    .main-card { border: 2px solid #b8922e; border-radius: 10px; padding: 25px; background: white; max-width: 850px; margin: auto; }
     </style>
 """, unsafe_allow_html=True)
 
-def get_google_finance_data(ticker):
-    # Google Finance uses TICKER:EXCHANGE format
-    url = f"https://www.google.com/finance/quote/{ticker}:NSE"
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'}
+def get_data_safely(ticker):
+    """Yahoo Finance se data nikalne ka sabse robust tarika"""
+    symbol = ticker + ".NS"
+    
+    # Browser ko mimic karne ke liye headers
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
     
     try:
-        response = requests.get(url, headers=headers)
-        soup = BeautifulSoup(response.text, 'html.parser')
+        # Session banayein taaki block na ho
+        session = requests.Session()
+        session.headers.update(headers)
         
-        # Price nikalo
-        price_class = soup.find("div", {"class": "YMlKec fxKbKc"})
-        price = price_class.text if price_class else "N/A"
+        stock = yf.Ticker(symbol, session=session)
         
-        # Company Name nikalo
-        name_class = soup.find("div", {"class": "zz1Oce"})
-        name = name_class.text if name_class else ticker
+        # Sirf zaroori data uthayein jo fast load ho
+        fast_info = stock.fast_info
         
-        # Market Cap aur baaki details ke liye
-        details = {}
-        for div in soup.find_all("div", {"class": "P6K39c"}):
-            parent = div.find_parent("div", {"class": "mfs7Fc"})
-            if parent:
-                label = parent.find("div", {"class": "mfs7Fc"}).text if parent.find("div", {"class": "mfs7Fc"}) else ""
-                details[label] = div.text
-
+        # Agar fast_info mil gaya, toh humein price mil jayegi
+        price = fast_info.last_price
+        
+        # Baaki details ke liye
+        info = stock.info
+        
         return {
+            "name": info.get('longName', ticker),
             "price": price,
-            "name": name,
-            "mcap": details.get("Market cap", "N/A"),
-            "pe": details.get("P/E ratio", "N/A"),
-            "yield": details.get("Dividend yield", "N/A"),
-            "ticker": ticker
+            "mcap": fast_info.market_cap / 10000000 if fast_info.market_cap else 0,
+            "pe": info.get('trailingPE', 'N/A'),
+            "symbol": symbol
         }
-    except:
-        return None
+    except Exception as e:
+        # Agar info fail ho jaye, toh history se price nikalne ki aakhri koshish
+        try:
+            stock = yf.Ticker(symbol)
+            hist = stock.history(period="1d")
+            if not hist.empty:
+                return {
+                    "name": ticker,
+                    "price": hist['Close'].iloc[-1],
+                    "mcap": 0,
+                    "pe": "N/A",
+                    "symbol": symbol
+                }
+        except:
+            return None
+    return None
 
 # Sidebar
+st.sidebar.image("https://via.placeholder.com/150x50?text=HEYFUND", use_container_width=True)
 st.sidebar.title("HeyFund Research")
-ticker_input = st.sidebar.text_input("Enter NSE Ticker (e.g. RELIANCE, TCS)", value="RELIANCE").upper().strip()
-generate_btn = st.sidebar.button("Generate Report")
+ticker_input = st.sidebar.text_input("Enter NSE Ticker", value="RELIANCE").upper().strip()
+btn = st.sidebar.button("Generate Report")
 
 if ticker_input:
-    with st.spinner(f'Fetching live data from Google Finance for {ticker_input}...'):
-        data = get_google_finance_data(ticker_input)
+    with st.spinner('Accessing Market Data...'):
+        data = get_data_safely(ticker_input)
     
-    if data and data['price'] != "N/A":
+    if data:
         report_date = datetime.date.today().strftime("%d %b %Y")
         
-        html_code = f"""
-        <div class="report-card">
-            <div style="background: #111118; color: white; padding: 20px; text-align: center; border-radius: 5px;">
-                <h1 style="color: #b8922e; margin: 0;">HeyFund Research Team</h1>
-                <p style="margin: 5px 0; opacity: 0.8;">Live Equity Research Report</p>
+        html = f"""
+        <div class="main-card">
+            <div style="background: #111118; color: white; padding: 20px; text-align: center; border-radius: 8px;">
+                <h2 style="color: #b8922e; margin: 0;">HeyFund Research Team</h2>
+                <p style="margin: 5px 0; font-size: 12px; opacity: 0.8;">Professional Equity Intelligence</p>
             </div>
             
-            <div style="padding: 30px; text-align: center;">
-                <h2 style="margin: 0; color: #111118; font-size: 32px;">{data['name']}</h2>
-                <p style="font-size: 16px; color: #666;">Exchange: NSE | Ticker: {data['ticker']} | Date: {report_date}</p>
-                <div style="font-size: 48px; font-weight: bold; color: #111118; margin: 20px 0;">
-                    {data['price']}
+            <div style="text-align: center; padding: 30px 0;">
+                <h1 style="margin: 0; font-size: 32px; color: #111118;">{data['name']}</h1>
+                <p style="color: #666;">Ticker: {data['symbol']} | Date: {report_date}</p>
+                <div style="font-size: 48px; font-weight: bold; margin: 20px 0; color: #111118;">
+                    ₹{data['price']:,.2f}
                 </div>
             </div>
 
-            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; padding: 20px; background: #fdf9f0; border-radius: 10px;">
-                <div style="text-align: center; border-right: 1px solid #ddd;">
-                    <h4 style="margin: 0; color: #b8922e; font-size: 12px;">MARKET CAP</h4>
-                    <p style="font-size: 20px; font-weight: bold; margin: 5px 0;">{data['mcap']}</p>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; background: #f9f9f9; padding: 20px; border-radius: 8px;">
+                <div style="text-align: center;">
+                    <div style="font-size: 12px; color: #b8922e; font-weight: bold;">MARKET CAP</div>
+                    <div style="font-size: 20px; font-weight: bold;">₹{data['mcap']:,.0f} Cr</div>
                 </div>
                 <div style="text-align: center;">
-                    <h4 style="margin: 0; color: #b8922e; font-size: 12px;">P/E RATIO</h4>
-                    <p style="font-size: 20px; font-weight: bold; margin: 5px 0;">{data['pe']}</p>
+                    <div style="font-size: 12px; color: #b8922e; font-weight: bold;">P/E RATIO</div>
+                    <div style="font-size: 20px; font-weight: bold;">{data['pe']}</div>
                 </div>
             </div>
 
-            <div style="margin-top: 30px; padding: 25px; background: #111118; color: white; border-radius: 10px;">
-                <h3 style="color: #b8922e; margin-top: 0;">HeyFund Conviction</h3>
-                <p style="line-height: 1.6; opacity: 0.9; font-size: 15px;">
-                    Current Price action shows strong support at these levels. The {data['pe']} P/E suggests the stock is trading at 
-                    fair valuation relative to historical averages. Investors may consider a long-term approach.
+            <div style="margin-top: 30px; padding: 20px; background: #111118; color: white; border-radius: 8px;">
+                <h4 style="color: #b8922e; margin-top: 0;">HeyFund Analyst View</h4>
+                <p style="font-size: 14px; opacity: 0.9; line-height: 1.5;">
+                    Fundamental analysis indicates strong resilience at current levels. 
+                    The P/E of {data['pe']} reflects the market's current expectation. 
+                    We maintain a neutral-to-positive stance for the medium term.
                 </p>
-                <div style="margin-top: 15px; font-weight: bold; color: #b8922e;">
-                    Verdict: STABLE / ACCUMULATE
-                </div>
             </div>
-
-            <div style="margin-top: 20px; font-size: 11px; color: #999; text-align: center;">
-                <b>Disclaimer:</b> Not SEBI Registered. For Educational Purpose Only. Research by HeyFund Research Team.
+            
+            <div style="text-align: center; margin-top: 20px; font-size: 10px; color: #aaa;">
+                © HeyFund Research | Educational Purposes Only | Not Investment Advice
             </div>
         </div>
         """
-        st.components.v1.html(html_code, height=850, scrolling=True)
+        st.components.v1.html(html, height=800)
     else:
-        st.error(f"Error: Could not fetch data for '{ticker_input}'. Make sure the NSE ticker is correct.")
-else:
-    st.info("Enter a stock name (e.g. INFY, TCS) to see the report.")
+        st.error(f"Could not connect to market data for {ticker_input}. Please try again in a few seconds.")
