@@ -4,20 +4,22 @@ import pyotp
 import pandas as pd
 import datetime
 import requests
-import time
 
-# --- PAGE SETUP ---
-st.set_page_config(page_title="HeyFund Pro Terminal | Live AngelOne", layout="wide")
+# --- PAGE CONFIG ---
+st.set_page_config(page_title="HeyFund Dashboard | Live Terminal", layout="wide")
 
+# --- CUSTOM CSS (IMAGE STYLE) ---
 st.markdown("""
     <style>
     #MainMenu {visibility: hidden;} footer {visibility: hidden;} header {visibility: hidden;}
-    @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:wght@400;700&family=IBM+Plex+Mono&display=swap');
-    .metric-card { background: #111118; padding: 15px; border-radius: 10px; border-top: 3px solid #b8922e; text-align: center; color: white; }
+    body { background-color: #f4f7f9; }
+    .report-card { background: white; border-radius: 15px; padding: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.05); margin-bottom: 20px; }
+    .sidebar-nav { background: #111118; color: white; height: 100vh; padding: 20px; }
+    .gold-text { color: #b8922e; }
     </style>
 """, unsafe_allow_html=True)
 
-# --- ANGELONE CREDENTIALS (SAVED) ---
+# --- ANGELONE CREDENTIALS ---
 API_KEY = "OiFQFiQV"
 CLIENT_ID = "R62843391"
 MPIN = "0619"
@@ -26,106 +28,109 @@ TOTP_SECRET = "YAB6GB2JRC3WVGJR7ZKQYGCK6I"
 if 'angel' not in st.session_state:
     st.session_state.angel = None
 
-# --- LOGIN LOGIC ---
-def connect_angelone():
+def get_session():
     try:
-        smart_api = SmartConnect(api_key=API_KEY)
-        totp = pyotp.TOTP(TOTP_SECRET).now()
-        data = smart_api.generateSession(CLIENT_ID, MPIN, totp)
-        if data['status']:
-            st.session_state.angel = smart_api
-            return True
-        return False
-    except Exception as e:
-        st.error(f"Connection Error: {e}")
-        return False
+        obj = SmartConnect(api_key=API_KEY)
+        token = pyotp.TOTP(TOTP_SECRET).now()
+        data = obj.generateSession(CLIENT_ID, MPIN, token)
+        if data['status']: return obj
+        return None
+    except: return None
 
-# --- UI COMPONENTS ---
-def show_header(title):
+def get_ltp(obj, symbol, token, exchange="NSE"):
+    try:
+        res = obj.getLTP(exchange, symbol, token)
+        return res['data']['ltp'] if res['status'] else 0
+    except: return 0
+
+# --- MAIN DASHBOARD VIEW ---
+def show_dashboard(obj):
+    # Fetch Live Data
+    nifty_price = get_ltp(obj, "Nifty 50", "99926000")
+    # For Demo, let's say we are looking at RELIANCE (Token 2885)
+    stock_price = get_ltp(obj, "RELIANCE-EQ", "2885")
+    
+    # 1. HEADER SECTION (Matches Image)
     st.markdown(f"""
-        <div style="background:#111118; color:#fff; padding:15px 30px; display:flex; justify-content:space-between; align-items:center; border-radius:10px; margin-bottom:20px;">
-            <div><span style="color:#b8922e; font-weight:bold; font-size:22px; font-family:'DM Serif Display';">HeyFund Research Team</span><br><span style="font-size:10px; opacity:0.7;">Live AngelOne Terminal</span></div>
-            <div style="text-align:right;"><h3 style="margin:0; color:#b8922e;">{title}</h3></div>
+    <div class="report-card">
+        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+            <div>
+                <div style="font-size:12px; font-weight:bold; color:#b8922e; margin-bottom:5px;">STOCK RISK REPORT</div>
+                <h2 style="margin:0; font-family:sans-serif;">RELIANCE INDUSTRIES LTD (NSE: RELIANCE)</h2>
+            </div>
+            <div style="text-align:right;">
+                <div style="font-size:24px; font-weight:bold;">₹{stock_price:,.2f} <span style="color:#15803d; font-size:14px;">+12.45 (+0.52%)</span></div>
+                <div style="font-size:11px; color:#666;">As of {datetime.datetime.now().strftime('%b %d, %Y, %H:%M %p')} IST</div>
+            </div>
         </div>
+        
+        <div style="display:flex; margin-top:30px; align-items:center; gap:50px;">
+            <!-- GAUGE (SVG) -->
+            <div style="flex:1; text-align:center;">
+                <svg width="300" height="180" viewBox="0 0 300 180">
+                    <path d="M 40 150 A 110 110 0 0 1 260 150" fill="none" stroke="#eee" stroke-width="25" stroke-linecap="round"/>
+                    <path d="M 40 150 A 110 110 0 0 1 150 40" fill="none" stroke="#f1c40f" stroke-width="25" />
+                    <line x1="150" y1="150" x2="150" y2="50" stroke="#333" stroke-width="4" stroke-linecap="round"/>
+                    <circle cx="150" cy="150" r="6" fill="#333"/>
+                </svg>
+                <div style="margin-top:-60px;">
+                    <div style="font-size:18px; font-weight:bold; color:#b8922e;">MODERATE RISK</div>
+                    <div style="font-size:12px; color:#666;">Risk Score: 5.4/10</div>
+                </div>
+            </div>
+            
+            <!-- METRICS SIDEBAR -->
+            <div style="flex:1; display:grid; grid-template-columns: 1fr 1fr; gap:20px;">
+                <div><div style="font-size:11px; color:#666;">Volatility</div><div style="font-weight:bold;">Medium</div></div>
+                <div><div style="font-size:11px; color:#666;">Value</div><div style="font-weight:bold;">42.1%</div></div>
+                <div><div style="font-size:11px; color:#666;">Correlation</div><div style="font-weight:bold;">Neutral</div></div>
+                <div><div style="font-size:11px; color:#666;">Score</div><div style="font-weight:bold;">0.65</div></div>
+                <div><div style="font-size:11px; color:#666;">Market Sentiment</div><div style="font-weight:bold;">Neutral</div></div>
+            </div>
+        </div>
+    </div>
     """, unsafe_allow_html=True)
 
-# --- 1. OPTION CHAIN (SPLIT VIEW) ---
-def page_option_chain():
-    show_header("NIFTY & BANKNIFTY SPLIT VIEW")
-    st.sidebar.selectbox("Expiry Date", ["06-JUN-2024", "13-JUN-2024"])
-    
-    col_l, col_r = st.columns(2)
-    
-    oc_html = """
-    <div style="background:#111118; padding:15px; border-radius:10px; border:1px solid #333; font-family:sans-serif;">
-        <div style="display:flex; justify-content:space-between; color:#b8922e; font-weight:bold; margin-bottom:10px;">
-            <span>{NAME}</span><span style="color:#00ff88;">SPOT: {SPOT}</span>
-        </div>
-        <table style="width:100%; color:white; border-collapse:collapse; font-size:11px; text-align:center;">
-            <tr style="background:#222; color:#b8922e;"><th>OI</th><th>LTP</th><th style="background:#b8922e; color:black;">STRIKE</th><th>LTP</th><th>OI</th></tr>
-            <tr><td>45.2L</td><td>125.4</td><td style="color:#b8922e; background:#1a1a2e;">22400</td><td>42.1</td><td>12.5L</td></tr>
-            <tr style="background:#1a1a24; border:1px solid #b8922e;"><td>68.1L</td><td>88.2</td><td style="background:#b8922e; color:black; font-weight:bold;">22500</td><td>112.4</td><td>55.2L</td></tr>
-            <tr><td>12.4L</td><td>42.1</td><td style="color:#b8922e; background:#1a1a2e;">22600</td><td>185.2</td><td>92.1L</td></tr>
+    # 2. OPTION CHAIN PREVIEW (Matches Image Table)
+    st.markdown(f"""
+    <div class="report-card">
+        <div style="font-size:14px; font-weight:bold; color:#b8922e; margin-bottom:15px;">NIFTY OPTION CHAIN PREVIEW (SPOT: ₹{nifty_price:,.2f})</div>
+        <table style="width:100%; border-collapse:collapse; text-align:center; font-size:11px; font-family:sans-serif;">
+            <tr style="background:#fdf9f0; font-weight:bold;">
+                <td colspan="7">Call Options</td>
+                <td style="background:#fceecb;">Strike Price</td>
+                <td colspan="7">Put Options</td>
+            </tr>
+            <tr style="background:#f9f9f9; color:#666; font-size:10px;">
+                <th>OI (Lac)</th><th>Chg OI</th><th>Vol (L)</th><th>IV</th><th>LTP</th><th>Bid</th><th>Ask</th>
+                <th style="background:#fceecb; color:black;">Center</th>
+                <th>Ask</th><th>Bid</th><th>LTP</th><th>IV</th><th>Vol (L)</th><th>Chg OI</th><th>OI (Lac)</th>
+            </tr>
+            <!-- ATM ROW EXAMPLE -->
+            <tr><td>3.0</td><td>+39</td><td>200</td><td>95.8%</td><td>98.6</td><td>38.3</td><td>18.3</td><td style="background:#fceecb; font-weight:bold;">19100</td><td>14.3</td><td>13.3</td><td>98.6</td><td>93.8%</td><td>120</td><td>0</td><td>3.0</td></tr>
+            <tr style="background:#fff7e6; border:1.5px solid #b8922e;"><td>2.3</td><td>+15</td><td>160</td><td>100.7%</td><td>125.4</td><td>18.8</td><td>15.3</td><td style="background:#b8922e; color:white; font-weight:bold;">19300</td><td>18.3</td><td>18.8</td><td>75.2</td><td>105.7%</td><td>200</td><td>-14</td><td>10.3</td></tr>
+            <tr><td>2.0</td><td>-136</td><td>120</td><td>97.8%</td><td>98.6</td><td>14.3</td><td>18.8</td><td style="background:#fceecb; font-weight:bold;">19400</td><td>16.8</td><td>15.8</td><td>75.3</td><td>76.3%</td><td>120</td><td>-158</td><td>7.0</td></tr>
         </table>
     </div>
-    """
-    with col_l: st.components.v1.html(oc_html.replace("{NAME}", "NIFTY 50").replace("{SPOT}", "22,510"), height=350)
-    with col_r: st.components.v1.html(oc_html.replace("{NAME}", "BANK NIFTY").replace("{SPOT}", "48,205"), height=350)
+    """, unsafe_allow_html=True)
 
-# --- 2. STOCK ANALYSIS ---
-def page_stock_analysis():
-    show_header("PROFESSIONAL STOCK RESEARCH")
-    ticker = st.text_input("Enter NSE Ticker", value="RELIANCE").upper()
-    if st.button("Generate Pro Report"):
-        st.markdown(f"""
-        <div style="background:#fff; border:2px solid #b8922e; padding:40px; border-radius:10px; color:#111;">
-            <h1 style="font-family:'DM Serif Display'; margin:0;">{ticker} Analysis</h1>
-            <div style="display:grid; grid-template-columns:repeat(4,1fr); gap:20px; margin-top:20px;">
-                <div class="metric-card">LIVE PRICE<br>₹2,952.40</div>
-                <div class="metric-card">MCAP<br>₹18.5L Cr</div>
-                <div class="metric-card">P/E<br>25.4</div>
-                <div class="metric-card">RISK<br>LOW</div>
-            </div>
-            <div style="margin-top:30px; background:#111118; color:white; padding:20px; border-radius:10px;">
-                <h4 style="color:#b8922e;">HeyFund View</h4>
-                <p>Strategic leadership in its sector. Strong accumulation zone near 200-DMA.</p>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-# --- 3. MARKET MOVERS ---
-def page_market_movers():
-    show_header("MARKET PULSE & VOLUME SHOCKERS")
-    c1, c2 = st.columns(2)
-    with c1: 
-        st.subheader("✅ Top Gainers")
-        st.table(pd.DataFrame({'Symbol': ['TATA MOTORS', 'M&M', 'ADANI'], 'LTP': [952, 2450, 3105], 'Change%': ['+4.5%', '+3.2%', '+2.8%']}))
-    with c2:
-        st.subheader("❌ Top Losers")
-        st.table(pd.DataFrame({'Symbol': ['RELIANCE', 'WIPRO', 'HDFCBANK'], 'LTP': [2950, 462, 1512], 'Change%': ['-2.1%', '-1.8%', '-1.5%']}))
-    
-    st.markdown("---")
-    st.subheader("⚡ Top 5 Volume Shockers")
-    cols = st.columns(5)
-    for i, name in enumerate(["IRFC", "ZOMATO", "RVNL", "BHEL", "IDEA"]):
-        with cols[i]:
-            st.markdown(f"<div class='metric-card'>{name}<br><span style='font-size:22px; color:#b8922e;'>5.2x</span><br>Vol Spike</div>", unsafe_allow_html=True)
-
-# --- MAIN APP FLOW ---
+# --- LOGIN FLOW ---
 if st.session_state.angel is None:
-    st.markdown("<h1 style='text-align:center; color:#b8922e; font-family:serif;'>HEYFUND LIVE TERMINAL</h1>", unsafe_allow_html=True)
+    st.markdown("<h1 style='text-align:center; color:#b8922e;'>HEYFUND PRO LOGIN</h1>", unsafe_allow_html=True)
     if st.button("🚀 CONNECT LIVE TO ANGELONE"):
-        with st.spinner("Authenticating with SmartAPI..."):
-            if connect_angelone():
-                st.success("AngelOne Session Generated!")
+        with st.spinner("Logging into SmartAPI..."):
+            session = get_session()
+            if session:
+                st.session_state.angel = session
                 st.rerun()
+            else: st.error("Login Failed!")
 else:
-    st.sidebar.image("https://via.placeholder.com/200x60/111118/b8922e?text=HEYFUND", use_container_width=True)
-    page = st.sidebar.radio("Navigation", ["Option Chain", "Stock Analysis", "Market Movers"])
-    if st.sidebar.button("Logout"):
-        st.session_state.angel = None
-        st.rerun()
-
-    if page == "Option Chain": page_option_chain()
-    elif page == "Stock Analysis": page_stock_analysis()
-    elif page == "Market Movers": page_market_movers()
+    # SIDEBAR NAVIGATION (Matches Image Icons)
+    with st.sidebar:
+        st.markdown("<h1 style='color:#b8922e;'>HEYFUND</h1>", unsafe_allow_html=True)
+        st.radio("Menu", ["Dashboard", "Portfolio", "Stock Research", "Nifty Option Chain", "Market Insights"])
+        if st.button("Logout"):
+            st.session_state.angel = None
+            st.rerun()
+    
+    show_dashboard(st.session_state.angel)
